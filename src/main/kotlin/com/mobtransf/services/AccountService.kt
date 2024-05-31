@@ -32,7 +32,7 @@ class AccountService(
                 lastName = client.lastName,
                 passwordHash = client.password,
             )
-            val accountNumber = generateAccountNumber();
+            val accountNumber = generateAccountNumber()
             val account = accountDTO.run {
                 Account(null, accountNumber, accountDTO.accountType, existingClient, balance)
             }
