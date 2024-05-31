@@ -1,0 +1,154 @@
+================with no Account Overview=============
+package com.mobtransf.services
+
+import com.mobtransf.dto.AccountDTO
+import com.mobtransf.models.Account
+import com.mobtransf.models.Client
+import com.mobtransf.respositories.AccountRepository
+import jakarta.persistence.EntityManager
+import mu.KLogging
+import org.springframework.stereotype.Service
+
+@Service
+class AccountService(
+    val accountRepository: AccountRepository,
+    val clientService: ClientService,
+    val entityManager: EntityManager
+) {
+
+    companion object : KLogging()
+
+    fun addAccount(nid: String, accountDTO: AccountDTO): AccountDTO? {
+        // Check if the client exists
+        val client = clientService.findByNationalId(nid)
+        return if (client != null) {
+            val existingClient = Client(
+                nationalId = client.nationalId,
+                firstName = client.firstName,
+                email = client.email,
+                phoneNumber = client.phoneNumber,
+                lastName = client.lastName,
+                passwordHash = client.password,
+            )
+            val accountNumber = generateAccountNumber();
+            val account = accountDTO.run {
+                Account(null, accountNumber, accountDTO.accountType, existingClient, balance)
+            }
+            val savedAccount = accountRepository.save(account)
+
+            logger.info("Account created successfully! Account number is ${savedAccount.accountNumber}")
+
+            savedAccount.let {
+                AccountDTO(it.id, it.accountNumber, it.accountType, it.accountHolder, it.balance)
+            }
+        } else {
+            null
+        }
+
+    }
+
+    private fun generateAccountNumber(): Long {
+        val query = entityManager.createQuery("SELECT MAX(a.accountNumber) FROM Account a")
+        val lastAccountNumber = query.singleResult as Long? ?: 1000000000L // Handle potential null value
+        val newAccountNumber = String.format("%010d", lastAccountNumber + 1).toLong()
+
+        return newAccountNumber
+    }
+
+    fun retrieveAccounts(): List<AccountDTO> {
+
+        val accounts = accountRepository.findAll()
+        return accounts
+            .map {
+                AccountDTO(it.id!!, it.accountNumber, it.accountType, null, it.balance)
+            }
+
+    }
+
+    fun updateAccount(account: AccountDTO) {
+        logger.info("passed account no :${account.accountNumber} account balance : ${account.balance}")
+        val updatedAccount = Account(
+            id = account.accountId,
+            accountNumber = account.accountNumber,
+            accountType = account.accountType,
+            accountHolder = account.accountHolder!!,
+            balance = account.balance
+        )
+        logger.info("To update account no :${updatedAccount.accountNumber} account balance : ${updatedAccount.balance}")
+        val savedAccount = accountRepository.save(updatedAccount)
+        logger.info("updated account no :${savedAccount.accountNumber} account balance : ${savedAccount.balance}")
+    }
+
+    fun deleteAccount(id: String) {
+        val existingAccount = findById(id)
+        if (existingAccount != null) {
+            accountRepository.deleteById(existingAccount.id!!)
+        }
+    }
+
+    fun findByAccountNumber(accountNumber: Long): AccountDTO? {
+        val existingAccount = accountRepository.findByAccountNumber(accountNumber)
+        return if (existingAccount.isPresent) {
+            existingAccount.get()
+                .let {
+                    AccountDTO(it.id!!, it.accountNumber, it.accountType, it.accountHolder, it.balance)
+                }
+        } else {
+            null
+        }
+
+    }
+
+    fun findById(id: String): Account? {
+        val existingAccount = accountRepository.findById(id)
+        return if (existingAccount.isPresent) {
+            existingAccount.get()
+        } else {
+            null
+        }
+    }
+
+    fun viewBalance(accountNumber: Long): Double? {
+        val account = findByAccountNumber(accountNumber)
+        return if (account != null) {
+            logger.info("Account balance is ${account.balance}")
+            account.balance
+        } else {
+            null
+        }
+    }
+
+    fun findBYAccountHolder(clientID: String): List<AccountDTO>? {
+        val existingClient = clientService.findByNationalId(clientID)
+        logger.info("from account client is ${existingClient?.firstName}")
+        return if (existingClient != null) {
+            val foundClient = Client(
+                nationalId = existingClient.nationalId,
+                firstName = existingClient.firstName,
+                lastName = existingClient.lastName,
+                phoneNumber = existingClient.phoneNumber,
+                email = existingClient.email,
+                passwordHash = existingClient.password
+            )
+            val accounts = accountRepository.findByAccountHolder(foundClient)
+            accounts
+                .map {
+                    println("========Accounts found======= ")
+                    logger.info("Account number is ${it.accountNumber}")
+                    AccountDTO(it.id!!, it.accountNumber, it.accountType, null, it.balance)
+                }
+        } else {
+            null
+        }
+    }
+
+}
+============================
+
+// Find associated accounts
+        val accounts = findBYAccountHolder(clientID)
+
+        // Delete each account
+        accounts?.forEach { account ->
+            deleteAccount(account.accountId!!)
+        }

@@ -1,0 +1,103 @@
+package com.mobtransf.controller
+
+import com.mobtransf.dto.TransactionDTO
+import com.mobtransf.services.TransactionService
+import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.*
+
+
+@RestController
+//@RequestMapping("/transactions")
+class TransactionController(val transactionService: TransactionService) {
+
+    @PostMapping("/accounts/{accountNumber}/{transactionType}")
+    fun makeTransfer(
+        @PathVariable accountNumber: Int,
+        @PathVariable transactionType: TransactionType
+        @RequestBody transaction: TransactionDTO
+    ): ResponseEntity<String> {
+
+        val result = when (transactionType){
+                "withdraw" -> transactionService.deposit(accountNumber, transaction)
+                "Deposit" -> transactionService.withdraw(accountNumber, transaction)
+                "Transfer" -> transactionService.makeTransfer(accountNumber, transaction)
+                else -> false
+            }
+
+        // Delegate processing to TransactionService
+        val result =
+
+        // Translate the outcome of the transfer operation into an HTTP response
+        return if (result) {
+            ResponseEntity.ok("Transfer successful")
+        } else {
+            ResponseEntity.badRequest().body("Transfer failed")
+        }
+    }
+
+    @GetMapping("/accounts/{accountNumber}/transactions")
+    @ResponseStatus(HttpStatus.OK)
+    fun retrieveAllTransactions(@PathVariable accountNumber: Int): List<TransactionDTO> =
+        transactionService.findByAccount(accountNumber)
+
+
+}
+
+===========================Service=================================================
+
+    fun makeTransfer(senderAccount: Int, transactionDTO: TransactionDTO): Boolean {
+        val sourceAccount = accountService.findByAccountNumber(senderAccount)
+        val destinationAccount = accountService.findByAccountNumber(transactionDTO.account)
+
+        var response: Boolean
+
+        sourceAccount.let {
+            // Ensure sender has enough balance for the transfer
+            if (it.balance < transactionDTO.amount) {
+                response = false
+                throw InsufficientBalanceException("Insufficient balance for transfer")
+            } else {
+                // Update sender's balance
+                it.balance -= transactionDTO.amount
+                /*val updatedAccountDTO = AccountDTO(
+                    it.id,
+                    it.accountNo,
+                    it.balance
+                )*/
+                accountService.updateAccount(it)
+
+                // Record transaction
+                val sourceTransaction = Transaction(
+                    id = null,
+                    account = it.accountNumber,
+                    amount = transactionDTO.amount,
+                    transactionType = TransactionType.TRANSFER,
+                    date = LocalDateTime.now()
+                )
+                transactionRepository.save(sourceTransaction)
+                logger.info("Transaction occured :${sourceTransaction.transactionType}")
+            }
+        }
+
+        destinationAccount.let {
+            // Update receiver's balance
+            it.balance += transactionDTO.amount
+            accountService.updateAccount(it)
+
+            // Record transactions
+
+            val destinationTransaction = Transaction(
+                id = null,
+                account = it.accountNumber,
+                amount = transactionDTO.amount,
+                transactionType = TransactionType.TRANSFER,
+                date = LocalDateTime.now()
+            )
+            transactionRepository.save(destinationTransaction)
+            logger.info("Transaction occured :${destinationTransaction.transactionType}")
+
+            response = true
+        }
+        return response
+    }

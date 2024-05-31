@@ -1,0 +1,84 @@
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
+
+@Entity
+data class Client(
+    @Id
+    val nationalId: String,
+    var firstName: String,
+    var lastName: String,
+    var phoneNumber: String,
+    var email: String,
+    var passwordHash: String, // Store hashed password instead of plain text
+    @OneToMany(fetch = FetchType.LAZY)
+    var accounts: List<Account>
+) : Serializable
+
+@Service
+class ClientService(val clientRepository: ClientRepository) {
+
+    companion object : KLogging()
+
+    fun addClient(clientDTO: ClientDTO): ClientDTO {
+        val passwordHash = BCryptPasswordEncoder().encode(clientDTO.password) // Hash the password
+        val client = clientDTO.let {
+            Client(it.nationalId, it.firstName, it.lastName, it.email, it.phoneNumber, passwordHash, it.accounts)
+        }
+        clientRepository.save(client)
+        logger.info("Client saved: ${client.firstName}")
+        return ClientDTO(client.nationalId, client.firstName, client.lastName, client.email, client.phoneNumber, "") // Return empty password for security
+    }
+
+    fun updateClient(nid: String, client: ClientDTO): ClientDTO {
+        val existingClient = findByNationalId(nid)
+        existingClient.apply {
+            firstName = client.firstName
+            lastName = client.lastName
+            email = client.email
+            phoneNumber = client.phoneNumber
+            passwordHash = BCryptPasswordEncoder().encode(client.password) // Update hashed password
+        }
+        clientRepository.save(existingClient)
+        return ClientDTO(existingClient.nationalId, existingClient.firstName, existingClient.lastName, existingClient.email, existingClient.phoneNumber, "") // Return empty password for security
+    }
+
+    fun authenticate(username: String, password: String): Boolean {
+        val client = getClientByUsername(username)
+        return BCryptPasswordEncoder().matches(password, client.passwordHash)
+    }
+
+    // Other methods remain the same...
+}
+
+
+============================================================================
+
+@Service
+class ClientService(val clientRepository: ClientRepository) {
+
+    companion object : KLogging()
+
+    fun addClient(clientDTO: ClientDTO): ClientDTO {
+        val passwordHash = BCryptPasswordEncoder().encode(clientDTO.password) // Hash the password
+        val client = clientDTO.let {
+            Client(it.nationalId, it.firstName, it.lastName, it.email, it.phoneNumber, passwordHash, it.accounts)
+        }
+        clientRepository.save(client)
+        logger.info("Client saved: ${client.firstName}")
+        return ClientDTO(client.nationalId, client.firstName, client.lastName, client.email, client.phoneNumber, "******") // Return asterisks for security
+    }
+
+    fun updateClient(nid: String, client: ClientDTO): ClientDTO {
+        val existingClient = findByNationalId(nid)
+        existingClient.apply {
+            firstName = client.firstName
+            lastName = client.lastName
+            email = client.email
+            phoneNumber = client.phoneNumber
+            passwordHash = BCryptPasswordEncoder().encode(client.password) // Update hashed password
+        }
+        clientRepository.save(existingClient)
+        return ClientDTO(existingClient.nationalId, existingClient.firstName, existingClient.lastName, existingClient.email, existingClient.phoneNumber, "******") // Return asterisks for security
+    }
+
+    // Other methods remain the same...
+}

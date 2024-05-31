@@ -1,0 +1,15 @@
+fun updateAccount(code: String?, accountDTO: AccountDTO): AccountDTO {
+
+        val existingAccount = accountRepository.findById(code!!)
+
+        return if (existingAccount.isPresent) {
+            existingAccount.get()
+                .let {
+                    it.balance = accountDTO.balance
+                    accountRepository.save(it)
+                    AccountDTO(it.id!!, it.accountNo, it.balance)
+                }
+        } else {
+            throw AccountNotFoundException("Account not found ")
+        }
+    }

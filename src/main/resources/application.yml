@@ -1,0 +1,43 @@
+#server:
+#  port: 8081
+#spring:
+#  application:
+#    name: mobile-transactions-service
+#  datasource:
+#    url: jdbc:h2:mem:testdb2;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false
+#    driverClassName: org.h2.Driver
+#    username: sa
+#    password: password
+#  jpa:
+#    hibernate:
+#      ddl-auto: update
+##    database: h2
+##    database-platform: org.hibernate.dialect.H2Dialect
+#    generate-ddl: true
+#    show-sql: true
+##    defer-datasource-initialization: true
+#  h2:
+#    console:
+#      enabled: true
+#message: Hello from Default profile
+
+
+
+
+server:
+  port: 8082
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/mobtransfdb
+    username: postgres
+    password: 23068
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+#logging:
+#  level:
+#    org.springframework.boot: DEBUG
+#    org.hibernate: DEBUG

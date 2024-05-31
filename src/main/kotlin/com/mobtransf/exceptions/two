@@ -1,0 +1,446 @@
+============================ClientController============================
+package com.mobtransf.controller
+
+import com.mobtransf.dto.AccountTransactionOverviewDTO
+import com.mobtransf.dto.ClientDTO
+import com.mobtransf.dto.LoginRequest
+import com.mobtransf.services.AccountService
+import com.mobtransf.services.ClientService
+import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.*
+
+@CrossOrigin
+@RestController
+@RequestMapping("/api/clients")
+class ClientController(val clientService: ClientService, val accountService: AccountService) {
+
+    @PostMapping("/login")
+    fun login(@RequestBody loginRequest: LoginRequest): ResponseEntity<*> {
+        val username = loginRequest.email
+        val password = loginRequest.password
+
+        val clientDTO = clientService.login(username, password)
+            ?: return ResponseEntity.status(HttpStatus.CONFLICT).body("Invalid username or password")
+
+        return ResponseEntity(clientDTO, HttpStatus.OK)
+    }
+
+    @GetMapping
+    @ResponseStatus(HttpStatus.OK)
+    fun retrieveAllClients(): List<ClientDTO> = clientService.findAll()
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+//    @PreAuthorize("permitAll()")
+    fun addClient(@RequestBody client: ClientDTO): ResponseEntity<ClientDTO> {
+        val createdClient = clientService.addClient(client)
+        return if (createdClient != null) {
+            ResponseEntity(createdClient, HttpStatus.CREATED)
+        } else {
+            ResponseEntity.status(HttpStatus.CONFLICT).build();
+        }
+
+    }
+
+    @PutMapping("/{nid}")
+    fun updateClient(@PathVariable nid: String, @RequestBody client: ClientDTO) =
+        clientService.updateClient(nid, client)
+
+    @DeleteMapping("/{nid}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    fun removeClient(@PathVariable nid: String) = clientService.deleteClient(nid)
+
+    @GetMapping("/{nid}")
+    @ResponseStatus(HttpStatus.OK)
+    fun findByNationalId(@PathVariable nid: String): ResponseEntity<ClientDTO> {
+        val clientDTO = clientService.findByNationalId(nid)
+        return if (clientDTO != null) {
+            ResponseEntity(clientDTO, HttpStatus.OK)
+        } else {
+            ResponseEntity(HttpStatus.NOT_FOUND)
+        }
+//        return ResponseEntity.ok().body(result)
+    }
+
+    @GetMapping("/clients/{clientId}/accounts/overview")
+    fun getClientAccountOverviews(@PathVariable clientId: String): List<AccountTransactionOverviewDTO> {
+        val client = clientService.findByNationalId(clientId) ?: return emptyList()
+
+        val accounts = accountService.findBYAccountHolder(client.nationalId) ?: return emptyList()
+
+        return accounts.map { account ->
+            accountService.getAccountTransactionOverview(account.accountNumber)!!
+        }
+    }
+}
+========================================AccountController===============================================
+package com.mobtransf.controller
+
+import com.mobtransf.dto.AccountDTO
+import com.mobtransf.services.AccountService
+import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.*
+
+@CrossOrigin
+@RestController
+@RequestMapping("/api")
+class AccountController(val accountService: AccountService) {
+
+    @GetMapping("/clients/{nid}/accounts")
+    @ResponseStatus(HttpStatus.OK)
+    fun findAll(@PathVariable nid: String): ResponseEntity<List<AccountDTO>> {
+        val accounts = accountService.findBYAccountHolder(nid)!!
+        return ResponseEntity.ok(accounts)
+    }
+
+    @PostMapping("/clients/{nid}/accounts") // POST /clients/{nid}/accounts
+    @ResponseStatus(HttpStatus.CREATED)
+    fun addAccount(@PathVariable nid: String, @RequestBody account: AccountDTO): ResponseEntity<AccountDTO> {
+
+        val createdAccount = accountService.addAccount(nid, account)
+        // Translate the outcome of the transfer operation into an HTTP response
+        return if (createdAccount == null) {
+            ResponseEntity.badRequest().body(createdAccount)
+
+        } else {
+            ResponseEntity(createdAccount, HttpStatus.CREATED)
+        }
+    }
+
+
+    /*@PutMapping("/{code}")
+    fun updateAccount(@PathVariable code: String, @RequestBody account: AccountDTO) {
+
+        accountService.updateAccount(code, account)
+    }*/
+
+    @DeleteMapping("/accounts/{id}")
+    fun removeAccount(@PathVariable id: String): ResponseEntity<Void> {
+        accountService.deleteAccount(id)
+        return ResponseEntity.noContent().build()
+    }
+
+    @GetMapping("/accounts/{accountNumber}")
+    fun findByAccountNumber(@PathVariable accountNumber: Int): ResponseEntity<AccountDTO> {
+        val account = accountService.findByAccountNumber(accountNumber.toLong())
+        return ResponseEntity.ok(account)
+    }
+
+    @GetMapping("/accounts/{accountNumber}/balance")
+    fun getBalance(@PathVariable accountNumber: Int): ResponseEntity<Double> {
+        val balance = accountService.viewBalance(accountNumber.toLong())!!
+        return ResponseEntity.ok(balance)
+    }
+}
+==================================AccountService======================================
+package com.mobtransf.services
+
+import com.mobtransf.dto.AccountDTO
+import com.mobtransf.dto.AccountTransactionOverviewDTO
+import com.mobtransf.models.Account
+import com.mobtransf.models.Client
+import com.mobtransf.respositories.AccountRepository
+import jakarta.persistence.EntityManager
+import mu.KLogging
+import org.springframework.stereotype.Service
+
+@Service
+class AccountService(
+    val accountRepository: AccountRepository,
+    val clientService: ClientService,
+    val entityManager: EntityManager,
+    val transactionRepository: TransactionService
+) {
+
+    companion object : KLogging()
+
+    fun addAccount(nid: String, accountDTO: AccountDTO): AccountDTO? {
+        // Check if the client exists
+        val client = clientService.findByNationalId(nid)
+        return if (client != null) {
+            val existingClient = Client(
+                nationalId = client.nationalId,
+                firstName = client.firstName,
+                email = client.email,
+                phoneNumber = client.phoneNumber,
+                lastName = client.lastName,
+                passwordHash = client.password,
+            )
+            val accountNumber = generateAccountNumber();
+            val account = accountDTO.run {
+                Account(null, accountNumber, accountDTO.accountType, existingClient, balance)
+            }
+            val savedAccount = accountRepository.save(account)
+
+            logger.info("Account created successfully! Account number is ${savedAccount.accountNumber}")
+
+            savedAccount.let {
+                AccountDTO(it.id, it.accountNumber, it.accountType, it.accountHolder, it.balance)
+            }
+        } else {
+            null
+        }
+
+    }
+
+    private fun generateAccountNumber(): Long {
+        val query = entityManager.createQuery("SELECT MAX(a.accountNumber) FROM Account a")
+        val lastAccountNumber = query.singleResult as Long? ?: 1000000000L // Handle potential null value
+        val newAccountNumber = String.format("%010d", lastAccountNumber + 1).toLong()
+
+        return newAccountNumber
+    }
+
+    fun retrieveAccounts(): List<AccountDTO> {
+
+        val accounts = accountRepository.findAll()
+        return accounts
+            .map {
+                AccountDTO(it.id!!, it.accountNumber, it.accountType, null, it.balance)
+            }
+
+    }
+
+    fun updateAccount(account: AccountDTO) {
+        logger.info("passed account no :${account.accountNumber} account balance : ${account.balance}")
+        val updatedAccount = Account(
+            id = account.accountId,
+            accountNumber = account.accountNumber,
+            accountType = account.accountType,
+            accountHolder = account.accountHolder!!,
+            balance = account.balance
+        )
+        logger.info("To update account no :${updatedAccount.accountNumber} account balance : ${updatedAccount.balance}")
+        val savedAccount = accountRepository.save(updatedAccount)
+        logger.info("updated account no :${savedAccount.accountNumber} account balance : ${savedAccount.balance}")
+    }
+
+    fun deleteAccount(id: String) {
+        val existingAccount = findById(id)
+        if (existingAccount != null) {
+            accountRepository.deleteById(existingAccount.id!!)
+        }
+    }
+
+    fun findByAccountNumber(accountNumber: Long): AccountDTO? {
+        val existingAccount = accountRepository.findByAccountNumber(accountNumber)
+        return if (existingAccount.isPresent) {
+            existingAccount.get()
+                .let {
+                    AccountDTO(it.id!!, it.accountNumber, it.accountType, it.accountHolder, it.balance)
+                }
+        } else {
+            null
+        }
+
+    }
+
+    fun findById(id: String): Account? {
+        val existingAccount = accountRepository.findById(id)
+        return if (existingAccount.isPresent) {
+            existingAccount.get()
+        } else {
+            null
+        }
+    }
+
+    fun viewBalance(accountNumber: Long): Double? {
+        val account = findByAccountNumber(accountNumber)
+        return if (account != null) {
+            logger.info("Account balance is ${account.balance}")
+            account.balance
+        } else {
+            null
+        }
+    }
+
+    fun findBYAccountHolder(clientID: String): List<AccountDTO>? {
+        val existingClient = clientService.findByNationalId(clientID)
+        logger.info("from account client is ${existingClient?.firstName}")
+        return if (existingClient != null) {
+            val foundClient = Client(
+                nationalId = existingClient.nationalId,
+                firstName = existingClient.firstName,
+                lastName = existingClient.lastName,
+                phoneNumber = existingClient.phoneNumber,
+                email = existingClient.email,
+                passwordHash = existingClient.password
+            )
+            val accounts = accountRepository.findByAccountHolder(foundClient)
+            accounts
+                .map {
+                    println("========Accounts found======= ")
+                    logger.info("Account number is ${it.accountNumber}")
+                    AccountDTO(it.id!!, it.accountNumber, it.accountType, null, it.balance)
+                }
+        } else {
+            null
+        }
+    }
+
+    fun getAccountTransactionOverview(accountNumber: Long): AccountTransactionOverviewDTO? {
+        val account = findByAccountNumber(accountNumber) ?: return null
+
+        val transactions = transactionRepository.findByAccount(accountNumber.toInt())
+        val totalIncoming = transactions.filter { it.destinationAccount == accountNumber }.sumOf { it.amount }
+        val totalOutgoing = transactions.filter { it.sourceAccount == accountNumber }.sumOf { it.amount }
+
+        return AccountTransactionOverviewDTO(
+            accountNumber = account.accountNumber!!,
+            balance = account.balance,
+            totalIncoming = totalIncoming,
+            totalOutgoing = totalOutgoing
+        )
+    }
+
+}
+===================================================
+
+================================ClientService=========================================
+package com.mobtransf.services
+
+//import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
+import com.mobtransf.dto.AccountDTO
+import com.mobtransf.dto.AccountType
+import com.mobtransf.dto.ClientDTO
+import com.mobtransf.models.Account
+import com.mobtransf.models.Client
+import com.mobtransf.respositories.ClientRepository
+import mu.KLogging
+import org.springframework.stereotype.Service
+
+
+@Service
+class ClientService(
+    val clientRepository: ClientRepository,
+//    val accountService: AccountService,
+//    @Autowired private val passwordEncoder: BCryptPasswordEncoder
+) {
+
+    companion object : KLogging()
+
+    private val accounts = mutableListOf<Account>()
+    fun login(email: String, password: String): ClientDTO? {
+        val existingClient = clientRepository.findByEmail(email)
+        if (existingClient == null) {
+            logger.info("found no such client with email : $email and password: $password")
+            return null
+        } else {
+            logger.info("found client ${existingClient.firstName}")
+            return if (existingClient.passwordHash != password) {
+                null
+            } else {
+                existingClient.toDTO()
+            }
+        }
+
+//        if (!verifyPassword(existingClient.passwordHash, password)) { // Username passed as password for verification
+//            return null
+//        }
+    }
+
+//    private fun verifyPassword(passwordHash: String, password: String): Boolean {
+////        return passwordEncoder.verify(password.toCharArray(), passwordHash.toCharArray())
+////        return passwordEncoder.matches(password, passwordHash)
+//    }
+
+    fun findByNationalId(nid: String): ClientDTO? {
+        val existingClient = clientRepository.findByNationalId(nid)
+        logger.info("Client found :${existingClient?.firstName}")
+        print("client: ${existingClient.toDTO()}")
+        return existingClient.toDTO()
+    }
+
+    fun addClient(clientDTO: ClientDTO): ClientDTO? {
+        val existingClient = clientRepository.findById(clientDTO.nationalId)
+        if (existingClient.isPresent) {
+            return null
+        } else {
+            // Hash the password
+//            val passwordHash = passwordEncoder.encode(clientDTO.password)
+            //   BCrypt.hashpw(clientDTO.password, BCrypt.gensalt())
+
+            val client = Client(
+                nationalId = clientDTO.nationalId,
+                firstName = clientDTO.firstName,
+                lastName = clientDTO.lastName,
+                phoneNumber = clientDTO.phoneNumber,
+                email = clientDTO.email,
+                passwordHash = clientDTO.password
+            )
+            val savedClient = clientRepository.save(client)
+            logger.info("Client saved :${savedClient.firstName}")
+
+            val newAccountDTO = AccountDTO(
+                accountId = null,
+                accountNumber = null,
+                accountHolder = null,
+                accountType = AccountType.CURRENT_ACCOUNT,
+            )
+
+//            val newAccount = accountService.addAccount(savedClient.nationalId, newAccountDTO)
+
+            return savedClient.toDTO()
+        }
+
+    }
+
+    fun findAll(): List<ClientDTO> {
+
+        return clientRepository.findAll()
+            .map {
+                ClientDTO(it.nationalId, it.firstName, it.lastName, it.email, it.phoneNumber, "***")
+            }
+
+    }
+
+    fun updateClient(nid: String, client: ClientDTO): Boolean {
+
+        val existingClient = clientRepository.findById(nid)
+        return if (existingClient.isPresent) {
+            val updateClient = existingClient.get()
+                .apply {
+                    firstName = client.firstName
+                    lastName = client.lastName
+                    email = client.email
+                    phoneNumber = client.phoneNumber
+                    passwordHash =
+                        client.password//BCryptPasswordEncoder().encode(client.password) // Update hashed password
+                }
+            clientRepository.save(updateClient)
+            true
+        } else {
+            false
+        }
+
+    }
+
+    fun deleteClient(nid: String) {
+
+        val existingClient = clientRepository.findById(nid)
+        if (existingClient.isPresent) {
+            existingClient.get()
+                .let {
+                    clientRepository.deleteById(it.nationalId)
+                }
+        }
+
+    }
+
+
+}
+
+private fun Client?.toDTO(): ClientDTO? {
+    return this?.let {
+        ClientDTO(
+            nationalId = it.nationalId,
+            firstName = this.firstName,
+            lastName = this.lastName,
+            phoneNumber = this.phoneNumber,
+            email = this.email,
+            password = this.passwordHash
+        )
+    }
+}

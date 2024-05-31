@@ -1,0 +1,150 @@
+import org.springframework.stereotype.Service
+import java.time.LocalDateTime
+
+@Service
+class TransactionService(private val accountRepository: AccountRepository,
+                         private val transactionRepository: TransactionRepository) {
+
+    fun makeTransaction(transactionRequest: TransactionRequest): TransactionResponse {
+        // Retrieve account
+        val account = accountRepository.findById(transactionRequest.accountId)
+            .orElseThrow { throw IllegalArgumentException("Account not found") }
+
+        // Check if sufficient balance for withdrawal
+        if (transactionRequest.transactionType == TransactionType.WITHDRAWAL &&
+            account.balance < transactionRequest.amount) {
+            return TransactionResponse(false, "Insufficient balance")
+        }
+
+        // Update balance based on transaction type
+        val updatedBalance = when (transactionRequest.transactionType) {
+            TransactionType.DEPOSIT -> account.balance + transactionRequest.amount
+            TransactionType.WITHDRAWAL -> account.balance - transactionRequest.amount
+            else -> account.balance // No balance update needed for other transaction types
+        }
+
+        // Update account balance
+        account.balance = updatedBalance
+        accountRepository.save(account)
+
+        // Record transaction
+        val transaction = Transaction(
+            account = account,
+            amount = transactionRequest.amount,
+            transactionType = transactionRequest.transactionType,
+            date = LocalDateTime.now()
+        )
+        transactionRepository.save(transaction)
+
+        // Record transactions
+                val sourceTransaction = Transaction(
+                    account = sourceAccount,
+                    amount = transactionRequest.amount,
+                    transactionType = TransactionType.TRANSFER,
+                    date = LocalDateTime.now()
+                )
+                transactionRepository.save(sourceTransaction)
+
+                val destinationTransaction = Transaction(
+                    account = destinationAccount,
+                    amount = transactionRequest.amount,
+                    transactionType = TransactionType.TRANSFER,
+                    date = LocalDateTime.now()
+                )
+                transactionRepository.save(destinationTransaction)
+
+                return TransactionResponse(true, "Transfer successful")
+
+
+        return TransactionResponse(true, "Transaction successful")
+    }
+
+
+}
+
+import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.*
+
+@RestController
+@RequestMapping("/transactions")
+class TransactionController(private val transactionService: TransactionService) {
+
+    @PostMapping("/transfer")
+    fun makeTransfer(@RequestBody transactionRequest: TransactionRequest): ResponseEntity<TransactionResponse> {
+        val transactionResponse = transactionService.makeTransaction(transactionRequest)
+        return ResponseEntity.ok(transactionResponse)
+    }
+}
+
+=======sans REQUEST et RESPONSE========
+
+import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.*
+
+@RestController
+@RequestMapping("/transactions")
+class TransactionController(private val transactionService: TransactionService) {
+
+    @PostMapping("/transfer")
+    fun makeTransfer(@RequestParam sourceAccountId: String,
+                     @RequestParam destinationAccountId: String,
+                     @RequestParam amount: Double): ResponseEntity<String> {
+        // Delegate processing to TransactionService
+        val result = transactionService.makeTransfer(sourceAccountId, destinationAccountId, amount)
+
+        // Translate the outcome of the transfer operation into an HTTP response
+        return if (result) {
+            ResponseEntity.ok("Transfer successful")
+        } else {
+            ResponseEntity.badRequest().body("Transfer failed")
+        }
+    }
+}
+
+
+import org.springframework.stereotype.Service
+
+@Service
+class TransactionService(private val accountRepository: AccountRepository) {
+
+    fun makeTransfer(sourceAccountId: Long, destinationAccountId: Long, amount: Double): Boolean {
+        val sourceAccount = accountRepository.findById(sourceAccountId)
+            .orElseThrow { IllegalArgumentException("Source account not found") }
+
+        val destinationAccount = accountRepository.findById(destinationAccountId)
+            .orElseThrow { IllegalArgumentException("Destination account not found") }
+
+        if (sourceAccount.balance < amount) {
+            return false
+        }
+
+        sourceAccount.balance -= amount
+        destinationAccount.balance += amount
+
+        accountRepository.save(sourceAccount)
+        accountRepository.save(destinationAccount)
+
+        // Record transactions
+                val sourceTransaction = Transaction(
+                    account = sourceAccount,
+                    amount = amount,
+                    transactionType = TransactionType.TRANSFER,
+                    date = LocalDateTime.now()
+                )
+                transactionRepository.save(sourceTransaction)
+
+                val destinationTransaction = Transaction(
+                    account = destinationAccount,
+                    amount = amount,
+                    transactionType = TransactionType.TRANSFER,
+                    date = LocalDateTime.now()
+                )
+                transactionRepository.save(destinationTransaction)
+
+                return true
+            }
+
+        return true
+    }
+}
+
