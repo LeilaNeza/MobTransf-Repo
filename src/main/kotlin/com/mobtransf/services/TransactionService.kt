@@ -107,8 +107,19 @@ class TransactionService(val accountService: AccountService, val transactionRepo
                 destinationAccount = transaction.destinationAccount,
                 sourceAccount = transaction.sourceAccount,
                 date = transaction.date,
+                transactionType = transaction.transactionType,
                 flow = if (transaction.sourceAccount == accountNumber.toLong()) "Outgoing" else "Incoming"
             )
         }
     }
+
+    fun findBySourceAccount(accountNumber: Long): List<TransactionDTO> {
+        return transactionRepository.findBySourceAccount(accountNumber)
+    }
+
+    fun findByDestinationAccount(accountNumber: Long): List<TransactionDTO> {
+        return transactionRepository.findByDestinationAccount(accountNumber)
+    }
+
+
 }

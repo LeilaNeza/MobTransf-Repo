@@ -16,13 +16,33 @@ class AccountTransactionService(
 //        val account = accountService.findByAccountNumber(accountNumber) ?: return null
         logger.info("In overview passed $accountNumber")
         val balance = accountService.viewBalance(accountNumber)!!
-        val transactions = transactionService.findByAccount(accountNumber.toInt())
-        for (tr in transactions) {
-            logger.info("found id; ${tr.id} amount; ${tr.amount} source; ${tr.destinationAccount} destination; ${tr.sourceAccount} date; ${tr.date} flow: ${tr.flow}")
-        }
-        val totalIncoming = transactions.filter { it.destinationAccount == accountNumber }.sumOf { it.amount }
-        val totalOutgoing = transactions.filter { it.sourceAccount == accountNumber }.sumOf { it.amount }
+        logger.info("Account balance: $balance")
 
+        // Get transactions
+        val sourceTransactions = transactionService.findBySourceAccount(accountNumber)
+        val destinationTransactions = transactionService.findByDestinationAccount(accountNumber)
+        val allTransactions = (sourceTransactions + destinationTransactions).distinctBy { it.id }
+
+        logger.info("Total unique transactions fetched: ${allTransactions.size}")
+
+        // Log all transactions for the account
+        allTransactions.forEach { tr ->
+            logger.info(
+                "Transaction: id=${tr.id}, amount=${tr.amount}, source=${tr.sourceAccount}, destination=${tr.destinationAccount}, date=${tr.date}, flow=${tr.flow}"
+            )
+        }
+
+        // Calculate total incoming and outgoing
+        val totalIncoming = allTransactions.filter { it.destinationAccount == accountNumber && it.flow == "Incoming" }
+            .sumOf { it.amount }
+        val totalOutgoing =
+            allTransactions.filter { it.sourceAccount == accountNumber && it.flow == "Outgoing" }.sumOf { it.amount }
+
+        // Log calculated totals
+        logger.info("Total incoming for account $accountNumber: $totalIncoming")
+        logger.info("Total outgoing for account $accountNumber: $totalOutgoing")
+
+        // Create overview DTO
         return AccountTransactionOverviewDTO(
             accountNumber = accountNumber,
             balance = balance,
@@ -30,4 +50,5 @@ class AccountTransactionService(
             totalOutgoing = totalOutgoing
         )
     }
+
 }

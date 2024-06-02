@@ -8,6 +8,6 @@ data class TransactionDTO(
     val destinationAccount: Long,
     val sourceAccount: Long?,
     val date: LocalDateTime?,
-    val flow: String?
-
+    val flow: String?,
+    val transactionType: TransactionType?
 )

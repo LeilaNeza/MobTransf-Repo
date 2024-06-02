@@ -2,17 +2,22 @@ package com.mobtransf.services
 
 import com.mobtransf.dto.AccountDTO
 import com.mobtransf.dto.ClientDTO
+import com.mobtransf.dto.TransactionType
 import com.mobtransf.models.Account
 import com.mobtransf.models.Client
+import com.mobtransf.models.Transaction
 import com.mobtransf.respositories.AccountRepository
 import com.mobtransf.respositories.ClientRepository
+import com.mobtransf.respositories.TransactionRepository
 import jakarta.persistence.EntityManager
 import mu.KLogging
 import org.springframework.stereotype.Service
+import java.time.LocalDateTime
 
 @Service
 class AccountService(
     val accountRepository: AccountRepository,
+    val transactionRepository: TransactionRepository,
     val clientRepository: ClientRepository,
     val clientService: ClientService,
     val entityManager: EntityManager
@@ -39,6 +44,22 @@ class AccountService(
             val savedAccount = accountRepository.save(account)
 
             logger.info("Account created successfully! Account number is ${savedAccount.accountNumber}")
+
+            // Create a deposit transaction if the initial balance is not zero
+            if (accountDTO.balance > 0.0) {
+                val transaction = Transaction(
+                    id = null,
+                    amount = accountDTO.balance,
+                    transactionType = TransactionType.DEPOSIT,
+                    destinationAccount = savedAccount.accountNumber!!,
+                    sourceAccount = null,
+                    date = LocalDateTime.now(),
+                    flow = "Incoming"
+                )
+                transactionRepository.save(transaction)
+                logger.info("Initial deposit transaction created successfully!")
+            }
+
 
             savedAccount.let {
                 AccountDTO(it.id, it.accountNumber, it.accountType, it.accountHolder.toDTO(), it.balance)

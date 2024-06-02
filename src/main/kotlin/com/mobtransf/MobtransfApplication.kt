@@ -5,7 +5,10 @@ import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfi
 import org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
 import org.springframework.boot.runApplication
 
-@SpringBootApplication(exclude = [SecurityAutoConfiguration::class, UserDetailsServiceAutoConfiguration::class])
+@SpringBootApplication(
+    exclude = [SecurityAutoConfiguration::class,
+        UserDetailsServiceAutoConfiguration::class]
+)
 class MobtransfApplication
 
 fun main(args: Array<String>) {
